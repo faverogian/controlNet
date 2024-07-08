@@ -1,8 +1,8 @@
 ## ControlNet: Adding Conditional Control to Text-to-Image Diffusion Models
 ### Unofficial PyTorch Implementation 
 
-**Adding Conditional Control to Text-to-Image Diffusion Models**
-Lvmin Zhang, Anyi Rao, Maneesh Agrawala
+**Adding Conditional Control to Text-to-Image Diffusion Models**  
+Lvmin Zhang, Anyi Rao, Maneesh Agrawala  
 [https://arxiv.org/abs/2301.11093](https://arxiv.org/abs/2302.05543)
 
 ### Requirements
