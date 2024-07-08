@@ -56,4 +56,4 @@ The code is equipped with HuggingFace's [Accelerator](https://huggingface.co/doc
 	    title   = {Efficient Diffusion Training via Min-SNR Weighting Strategy},
 	    author  = {Tiankai Hang and Shuyang Gu and Chen Li and Jianmin Bao and Dong Chen and Han Hu and Xin Geng and Baining Guo},
 	    year    = {2023}
-	    }
+	}
