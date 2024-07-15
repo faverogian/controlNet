@@ -1,16 +1,18 @@
 """
-A script for training a ControlNet on the Smithsonian Butterflies dataset following the simpleDiffusion paradigm.
+A script for training a ControlNet on the Smithsonian Butterflies dataset.
 
 An adaptation of the HuggingFace ControlNet training script.
 """
 
-from diffusion.unet import UNet2D, simpleUNet, UNetCondition2D
-from diffusion.simple_diffusion import simpleDiffusion
+from diffusion.unet import UNetCondition2D, ControlUNet
+from diffusion.control_net import ControlNet
+from utils.canny import AddCannyImage
 
 from datasets import load_dataset
 from torchvision import transforms
 import torch
 from diffusers.optimization import get_cosine_schedule_with_warmup
+import numpy as np
 
 
 class TrainingConfig:
@@ -24,7 +26,7 @@ class TrainingConfig:
     mixed_precision = "fp16"  # `no` for float32, `fp16` for automatic mixed precision
     output_dir = "ddpm-butterflies-128"  # the model name locally and on the HF Hub
     push_to_hub = True  # whether to upload the saved model to the HF Hub
-    hub_model_id = "faverogian/Smithsonian128UNet"  # the name of the repository to create on the HF Hub
+    hub_model_id = "faverogian/Smithsonian128ControlNet"  # the name of the repository to create on the HF Hub
     hub_private_repo = False
     overwrite_output_dir = True  # overwrite the old model when re-running the notebook
     seed = 0
@@ -43,13 +45,14 @@ def main():
             transforms.Resize((config.image_size, config.image_size)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
     )
 
     def transform(examples):
         images = [preprocess(image.convert("RGB")) for image in examples["image"]]
-        return {"images": images}
+        conditions = [AddCannyImage()(image) for image in images]
+        return {"images":images, "conditions":conditions}
 
     dataset.set_transform(transform)
 
@@ -59,44 +62,23 @@ def main():
         shuffle=True,
     )
 
-    unet = UNetCondition2D(
-        sample_size=config.image_size,  # the target image resolution
-        in_channels=3,  # the number of input channels, 3 for RGB images
-        out_channels=3,  # the number of output channels
-        layers_per_block=2,  # how many ResNet layers to use per UNet block
-        block_out_channels=(128, 128, 256, 256, 512, 512),  # the number of output channels for each UNet block
-        down_block_types=(
-            "DownBlock2D",
-            "DownBlock2D",
-            "DownBlock2D",
-            "DownBlock2D",
-            "AttnDownBlock2D",
-            "DownBlock2D",
-        ),
-        up_block_types=(
-            "UpBlock2D",
-            "AttnUpBlock2D",
-            "UpBlock2D",
-            "UpBlock2D",
-            "UpBlock2D",
-            "UpBlock2D",
-        ),
-        mid_block_type="UNetMidBlock2D",
-    )
+    unet = UNetCondition2D.from_pretrained("faverogian/Smithsonian128UNet", variant="fp16")
+    controlnet = ControlUNet.from_unet(unet, conditioning_channels=1)
 
-    optimizer = torch.optim.Adam(unet.parameters(), lr=config.learning_rate)
+    optimizer = torch.optim.Adam(controlnet.parameters(), lr=config.learning_rate)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=config.lr_warmup_steps,
         num_training_steps=len(train_loader) * config.num_epochs,
     )
 
-    diffusion_model = simpleDiffusion(
+    controlnet_model = ControlNet(
         unet=unet,
+        controlnet=controlnet,
         image_size=config.image_size
     )
 
-    diffusion_model.train_loop(
+    controlnet_model.train_loop(
         config=config,
         optimizer=optimizer,
         train_dataloader=train_loader,
