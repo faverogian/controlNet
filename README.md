@@ -5,6 +5,8 @@
 Lvmin Zhang, Anyi Rao, Maneesh Agrawala  
 [https://arxiv.org/abs/2301.11093](https://arxiv.org/abs/2302.05543)
 
+![alt text](https://github.com/faverogian/controlNet/blob/main/assets/controlNet.png?raw=true)
+
 ### Requirements
 * All testing and development was conducted on 4x 16GB NVIDIA V100 GPUs
 * 64-bit Python 3.8 and PyTorch 2.1 (or later). See  [https://pytorch.org](https://pytorch.org/)  for PyTorch install instructions.
