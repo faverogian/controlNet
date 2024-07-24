@@ -104,6 +104,9 @@ A sample training script is provided which assumes a pre-trained diffusion UNet 
 The code is equipped with HuggingFace's [Accelerator](https://huggingface.co/docs/accelerate/en/index) wrapper for distributed training. Multi-GPU training is easily done via:
 `accelerate launch --multi-gpu train.py`
 
+### Sample Results
+A model card for this project can be found at this [HuggingFace Repo](https://huggingface.co/faverogian/Smithsonian128ControlNet).
+
 ### Citations
 
 	@misc{zhang2023addingconditionalcontroltexttoimage,
