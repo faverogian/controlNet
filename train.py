@@ -4,41 +4,60 @@ A script for training a ControlNet on the Smithsonian Butterflies dataset.
 An adaptation of the HuggingFace ControlNet training script.
 """
 
-from diffusion.unet import UNetCondition2D, ControlUNet
 from diffusion.control_net import ControlNet
+from nets.unet import UNetCondition2D, ControlUNet
 from utils.canny import AddCannyImage
+from utils.plotter import side_by_side_plot
 
 from datasets import load_dataset
 from torchvision import transforms
 import torch
 from diffusers.optimization import get_cosine_schedule_with_warmup
-import numpy as np
-
 
 class TrainingConfig:
-    image_size = 128  # the generated image resolution
-    train_batch_size = 4
-    num_epochs = 1000
-    gradient_accumulation_steps = 1
+    # Optimization parameters
     learning_rate = 5e-5
     lr_warmup_steps = 10000
-    save_image_epochs = 50
-    mixed_precision = "fp16"  # `no` for float32, `fp16` for automatic mixed precision
-    output_dir = "ddpm-butterflies-128"  # the model name locally and on the HF Hub
-    push_to_hub = True  # whether to upload the saved model to the HF Hub
-    hub_model_id = "faverogian/Smithsonian128ControlNet"  # the name of the repository to create on the HF Hub
-    hub_private_repo = False
-    overwrite_output_dir = True  # overwrite the old model when re-running the notebook
-    seed = 0
+    train_batch_size = 64
+    gradient_accumulation_steps = 1
+    ema_beta = 0.9999
+    ema_warmup = 500
+    ema_update_freq = 10
 
+    # Experiment parameters
+    resume = True # whether to resume training from a checkpoint
+    num_epochs = 750 # the number of training epochs
+    save_image_epochs = 50 # how often to save generated images
+    evaluation_batches = 3 # the number of batches to use for evaluation
+    mixed_precision = "fp16"  # `no` for float32, `fp16` for automatic mixed precision
+    experiment_path = "" # codebase root directory
+    
+    # Model parameters
+    image_size = 128  # the generated image resolution
+    backbone = "unet"  # the backbone model to use, either 'unet' or 'uvit'
+
+    # Diffusion parameters
+    pred_param = "v" # 'v', 'eps'
+    schedule = "shifted_cosine" # shifted_cosine, cosine, shifted_cosine_interpolated
+    noise_d = 64 # base noise dimension to shift to
+    sampling_steps = 256 # number of steps to sample with
+
+    # Seed
+    seed = 0
 
 def main():
     
     config = TrainingConfig
 
+    # Load the dataset
     dataset_name = "huggan/smithsonian_butterflies_subset"
-
     dataset = load_dataset(dataset_name, split="train")
+
+    # Split the dataset into 80% train and 20% test
+    train_test_split = dataset.train_test_split(test_size=0.2)
+
+    train_dataset = train_test_split["train"]
+    test_dataset = train_test_split["test"]
 
     preprocess = transforms.Compose(
         [
@@ -52,20 +71,49 @@ def main():
     def transform(examples):
         images = [preprocess(image.convert("RGB")) for image in examples["image"]]
         conditions = [AddCannyImage()(image) for image in images]
+
         return {"images":images, "conditions":conditions}
 
-    dataset.set_transform(transform)
+    train_dataset.set_transform(transform)
+    test_dataset.set_transform(transform)
 
     train_loader = torch.utils.data.DataLoader(
-        dataset,
+        train_dataset,
         batch_size=config.train_batch_size,
         shuffle=True,
     )
 
-    unet = UNetCondition2D.from_pretrained("faverogian/Smithsonian128UNet", variant="fp16")
-    controlnet = ControlUNet.from_unet(unet, conditioning_channels=1)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=config.train_batch_size,
+        shuffle=False,
+    )
 
-    optimizer = torch.optim.Adam(controlnet.parameters(), lr=config.learning_rate)
+    unet = UNetCondition2D(
+        sample_size=config.image_size,  # the target image resolution
+        in_channels=12,  # the number of input channels, 3 for RGB images
+        out_channels=12,  # the number of output channels
+        layers_per_block=2,  # how many ResNet layers to use per UNet block
+        block_out_channels=(128,256,512,768),  # the number of output channels for each UNet block
+        down_block_types=(
+            "DownBlock2D",
+            "DownBlock2D",
+            "AttnDownBlock2D",
+            "AttnDownBlock2D",
+        ),
+        up_block_types=(
+            "AttnUpBlock2D",
+            "AttnUpBlock2D",
+            "UpBlock2D",
+            "UpBlock2D",
+        ),
+        mid_block_type="UNetMidBlock2D",
+    )
+
+    controlnet = ControlUNet.from_unet(unet, conditioning_channels=4)
+
+    # Put both the UNet and ControlNet parameters in the same optimizer
+    optimizer = torch.optim.Adam((list(controlnet.parameters()) + list(unet.parameters())), lr=config.learning_rate)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=config.lr_warmup_steps,
@@ -75,14 +123,15 @@ def main():
     controlnet_model = ControlNet(
         unet=unet,
         controlnet=controlnet,
-        image_size=config.image_size
+        config=config,
     )
 
     controlnet_model.train_loop(
-        config=config,
         optimizer=optimizer,
         train_dataloader=train_loader,
-        lr_scheduler=lr_scheduler
+        val_dataloader=test_loader,
+        lr_scheduler=lr_scheduler,
+        plot_function=side_by_side_plot,
     )
 
 

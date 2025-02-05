@@ -6,8 +6,8 @@ https://www.geeksforgeeks.org/implement-canny-edge-detector-in-python-using-open
 """
 
 import numpy as np 
-import cv2 
 from torchvision import transforms
+import cv2
 
 
 class AddCannyImage:

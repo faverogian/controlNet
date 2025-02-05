@@ -1,4 +1,9 @@
 # Ignore virtual environment files
-venv/
-venv38/
+venv*/
 *.pyc
+
+# checkpoints
+checkpoints/
+
+# images
+*.png
